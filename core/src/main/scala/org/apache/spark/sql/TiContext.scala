@@ -89,6 +89,8 @@ class TiContext(val sparkSession: SparkSession) extends Serializable with Loggin
   val debug: DebugTool = new DebugTool
   val autoLoad: Boolean =
     conf.getBoolean(TiConfigConst.ENABLE_AUTO_LOAD_STATISTICS, defaultValue = true)
+  val forcedUpdateStatistics: Boolean =
+    conf.getBoolean(TiConfigConst.ENABLE_ENFORCE_UPDATE_STATISTICS, defaultValue = false)
 
   // add backtick for table name in case it contains, e.g., a minus sign
   private def getViewName(dbName: String, tableName: String, dbNameAsPrefix: Boolean): String =
