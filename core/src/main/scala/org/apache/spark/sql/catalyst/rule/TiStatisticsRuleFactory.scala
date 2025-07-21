@@ -60,7 +60,8 @@ case class TiStatisticsRule(getOrCreateTiContext: SparkSession => TiContext)(
         val tiDBTables = plan.collect {
           case DataSourceV2Relation(tiTable @ TiDBTable(_, _, _, _, _), _, _, _, _) => tiTable
         }.toList.map(_.table)
-        logger.info(f"plan has tiDBTable size: ${tiDBTables.size}")
+        val tiDBTableNames = tiDBTables.map(_.getName).mkString(",")
+        logger.info(f"plan has tiDBTable size: ${tiDBTables.size}, detail: ${tiDBTableNames}")
         if (tiDBTables.nonEmpty){
           StatisticsManager.bulkLoadStatisticsInfo(tiDBTables, forcedUpdateStatistics)
         }
