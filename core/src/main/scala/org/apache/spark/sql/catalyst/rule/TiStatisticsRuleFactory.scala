@@ -59,7 +59,7 @@ case class TiStatisticsRule(getOrCreateTiContext: SparkSession => TiContext)(
         // to reduce the number of interactions
         val tiDBTables = plan.collect {
           case DataSourceV2Relation(tiTable @ TiDBTable(_, _, _, _, _), _, _, _, _) => tiTable
-        }.toList.map(_.table)
+        }.toList.map(_.table).groupBy(_.getId).mapValues(_.head).values.toList
         val tiDBTableNames = tiDBTables.map(_.getName).mkString(",")
         logger.info(f"plan has tiDBTable size: ${tiDBTables.size}, detail: ${tiDBTableNames}")
         if (tiDBTables.nonEmpty){

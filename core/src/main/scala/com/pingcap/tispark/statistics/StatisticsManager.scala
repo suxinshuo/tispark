@@ -112,7 +112,7 @@ object StatisticsManager {
    */
   def loadStatisticsInfo(table: TiTableInfo, forcedUpdateStatistics: Boolean, columns: String*): Unit =
     synchronized {
-      logger.info("StatisticsManager loadStatisticsInfo")
+      logger.debug("StatisticsManager loadStatisticsInfo")
 
       require(table != null, "TableInfo should not be null")
       if (!StatisticsHelper.isManagerReady) {
@@ -139,15 +139,15 @@ object StatisticsManager {
       }
 
 
-      logger.info(s"Loading statistics info for table ${table.getName}, columns ${columns}")
-      logger.info(s"cache keys: ${statisticsMap.asMap().keySet()}")
+      logger.debug(s"Loading statistics info for table ${table.getName}, columns ${columns}")
+      logger.debug(s"cache keys: ${statisticsMap.asMap().keySet()}")
 
       if (!forcedUpdateStatistics && loadAll && statisticsMap.asMap.containsKey(tblId)) {
-        logger.info(s"Statistics info for table ${table.getName} is already loaded(hint cache).")
+        logger.debug(s"Statistics info for table ${table.getName} is already loaded(hint cache).")
         return
       }
 
-      logger.info(s"Statistics info for table ${table.getName} load from storage.")
+      logger.debug(s"Statistics info for table ${table.getName} load from storage.")
       // use cached one for incremental update
       val tblStatistic = if (statisticsMap.asMap.containsKey(tblId)) {
         statisticsMap.getIfPresent(tblId)

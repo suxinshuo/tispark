@@ -74,7 +74,7 @@ public abstract class DAGIterator<T> extends CoprocessorIterator<T> {
     this.pushDownType = pushDownType;
     this.storeType = storeType;
     this.startTs = startTs;
-    logger.info("DAGIterator init");
+    logger.debug("DAGIterator init");
     switch (pushDownType) {
       case NORMAL:
         dagService =
@@ -92,7 +92,7 @@ public abstract class DAGIterator<T> extends CoprocessorIterator<T> {
 
   @Override
   void submitTasks() {
-    logger.info("regionTasks size: {}", regionTasks.size());
+    logger.debug("regionTasks size: {}", regionTasks.size());
     for (RegionTask task : regionTasks) {
       switch (pushDownType) {
         case STREAMING:
