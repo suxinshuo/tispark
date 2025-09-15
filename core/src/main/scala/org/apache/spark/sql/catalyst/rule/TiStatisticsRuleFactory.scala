@@ -37,13 +37,15 @@ class TiStatisticsRuleFactory(getOrCreateTiContext: SparkSession => TiContext)
 case class TiStatisticsRule(getOrCreateTiContext: SparkSession => TiContext)(
     sparkSession: SparkSession)
     extends Rule[LogicalPlan] {
+  private val logger = LoggerFactory.getLogger(getClass.getName)
   private val tiContext = getOrCreateTiContext(sparkSession)
   private lazy val autoLoad = tiContext.autoLoad
+  private lazy val forcedUpdateStatistics = tiContext.forcedUpdateStatistics
 
   protected def loadStatistics: PartialFunction[LogicalPlan, LogicalPlan] = {
     case dr @ DataSourceV2Relation(tiTable @ TiDBTable(_, _, _, _, _), _, _, _, _) =>
       if (autoLoad) {
-        StatisticsManager.loadStatisticsInfo(tiTable.table)
+        StatisticsManager.loadStatisticsInfo(tiTable.table, forcedUpdateStatistics)
       }
       val sizeInBytes = StatisticsManager.estimateTableSize(tiTable.table)
       tiTable.tableRef.sizeInBytes = sizeInBytes
@@ -52,7 +54,18 @@ case class TiStatisticsRule(getOrCreateTiContext: SparkSession => TiContext)(
 
   override def apply(plan: LogicalPlan): LogicalPlan =
     plan match {
-      case _ =>
+      case _ => {
+        // Batch load this batch of table metadata information into the cache
+        // to reduce the number of interactions
+        val tiDBTables = plan.collect {
+          case DataSourceV2Relation(tiTable @ TiDBTable(_, _, _, _, _), _, _, _, _) => tiTable
+        }.toList.map(_.table).groupBy(_.getId).mapValues(_.head).values.toList
+        val tiDBTableNames = tiDBTables.map(_.getName).mkString(",")
+        logger.info(f"plan has tiDBTable size: ${tiDBTables.size}, detail: ${tiDBTableNames}")
+        if (tiDBTables.nonEmpty){
+          StatisticsManager.bulkLoadStatisticsInfo(tiDBTables, forcedUpdateStatistics)
+        }
         plan transformUp loadStatistics
+      }
     }
 }

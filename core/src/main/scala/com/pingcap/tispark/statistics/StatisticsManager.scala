@@ -101,6 +101,8 @@ object StatisticsManager {
   private[statistics] var histTable: TiTableInfo = _
   private[statistics] var bucketTable: TiTableInfo = _
 
+  def loadStatisticsInfo(table: TiTableInfo, columns: String*): Unit = loadStatisticsInfo(table, true, columns:_*)
+
   /**
    * Load statistics information maintained by TiDB to TiSpark.
    *
@@ -108,8 +110,10 @@ object StatisticsManager {
    * @param columns Concerning columns for `table`, only these columns' statistics information
    *                will be loaded, if empty, all columns' statistics info will be loaded
    */
-  def loadStatisticsInfo(table: TiTableInfo, columns: String*): Unit =
+  def loadStatisticsInfo(table: TiTableInfo, forcedUpdateStatistics: Boolean, columns: String*): Unit =
     synchronized {
+      logger.debug("StatisticsManager loadStatisticsInfo")
+
       require(table != null, "TableInfo should not be null")
       if (!StatisticsHelper.isManagerReady) {
         logger.warn("Some of the statistics information table are not loaded properly, " +
@@ -134,6 +138,16 @@ object StatisticsManager {
         })
       }
 
+
+      logger.debug(s"Loading statistics info for table ${table.getName}, columns ${columns}")
+      logger.debug(s"cache keys: ${statisticsMap.asMap().keySet()}")
+
+      if (!forcedUpdateStatistics && loadAll && statisticsMap.asMap.containsKey(tblId)) {
+        logger.debug(s"Statistics info for table ${table.getName} is already loaded(hint cache).")
+        return
+      }
+
+      logger.debug(s"Statistics info for table ${table.getName} load from storage.")
       // use cached one for incremental update
       val tblStatistic = if (statisticsMap.asMap.containsKey(tblId)) {
         statisticsMap.getIfPresent(tblId)
@@ -171,6 +185,90 @@ object StatisticsManager {
     results.foreach { putOrUpdateTblStats(tblStatistic, _) }
 
     statisticsMap.put(tblId, tblStatistic)
+  }
+
+  /**
+   * Bulk load table metadata information
+   *
+   * @param tables                 tables
+   * @param forcedUpdateStatistics Force update
+   */
+  def bulkLoadStatisticsInfo(tables: List[TiTableInfo], forcedUpdateStatistics: Boolean): Unit = {
+    if (forcedUpdateStatistics) {
+      loadStatsFromStorage(tables)
+    } else {
+      val noCacheTables = tables.filter(table => !statisticsMap.asMap.containsKey(table.getId))
+      if (noCacheTables.isEmpty) {
+        return
+      }
+      loadStatsFromStorage(noCacheTables)
+    }
+  }
+
+  private def loadStatsFromStorage(tables: List[TiTableInfo]): Unit = {
+    val tblIds: List[Long] = tables.map(_.getId)
+    val tblMap: Map[Long, TiTableInfo] = Map(tables.map(table => table.getId -> table): _*)
+    // stats_meta
+    val tsm: Map[Long, TableStatistics] = bulkLoadMetaToTblStats(tblIds)
+
+    // stats_histograms
+    val req = StatisticsHelper.buildBulkHistogramsRequest(
+      histTable, tblIds, clientSession.getTiKVSession.getTimestamp
+    )
+    val rows = readDAGRequest(req, histTable.getId)
+    if (rows.isEmpty) return
+    // group by table_id
+    val rowMap: Map[Long, List[Row]] = rows.toList.groupBy(_.getLong(0))
+    val requestMap = rowMap.map{case(tId, rows) => {
+      val tableInfo = tblMap(tId)
+      val requests = rows
+        .map { StatisticsHelper.extractStatisticsDTO(_, tableInfo, loadAll = true, mutable.ArrayBuffer[Long](), histTable) }
+        .filter { _ != null }
+      (tId, requests)
+    }}
+
+    // stats_buckets
+    val bucketMap = bulkLoadStatsBuckets(tblIds)
+
+    val resultMap: Map[Long, Seq[StatisticsResult]] = bucketMap.map { case (tId, bucketRows) => {
+      val requests = requestMap(tId)
+      if (requests.isEmpty) {
+        throw new RuntimeException(s"Table ${tId} cannot be found in stats_histograms")
+      }
+      val res = bucketRows.groupBy { _.getLong(2) }
+        .flatMap { t: (Long, List[Row]) =>
+          val histId = t._1
+          val rowsById = t._2
+          // split bucket rows into index rows / non-index rows
+          val (idxRows, colRows) = rowsById.partition { _.getLong(1) > 0 }
+          val (idxReq, colReq) = requests.partition { _.isIndex > 0 }
+          Array(
+            StatisticsHelper.extractStatisticResult(histId, idxRows.iterator, idxReq),
+            StatisticsHelper.extractStatisticResult(histId, colRows.iterator, colReq))
+        }
+        .filter { _ != null }
+        .toSeq
+      (tId, res)
+    }}
+
+    resultMap.foreach {
+      case (tId, results) => results.foreach { putOrUpdateTblStats(tsm(tId), _) }
+    }
+
+    tsm.foreach {
+      case (tId, tblStatistic) => statisticsMap.put(tId, tblStatistic)
+    }
+  }
+
+  private def bulkLoadStatsBuckets(tableIds: List[Long]): Map[Long, List[Row]] = {
+    val req = StatisticsHelper.buildBulkBucketRequest(
+        bucketTable,
+        tableIds,
+        clientSession.getTiKVSession.getTimestamp
+    )
+    val rows = readDAGRequest(req, bucketTable.getId)
+    if (rows.isEmpty) return Map.empty
+    rows.toList.groupBy(_.getLong(0))
   }
 
   private def putOrUpdateTblStats(tblStatistic: TableStatistics, result: StatisticsResult): Unit =
@@ -213,6 +311,29 @@ object StatisticsManager {
     tableStatistics.setVersion { row.getUnsignedLong(0) }
     tableStatistics.setModifyCount { row.getLong(2) }
     tableStatistics.setCount { row.getUnsignedLong(3) }
+  }
+
+  private def bulkLoadMetaToTblStats(tableIds: List[Long]): Map[Long, TableStatistics] = {
+    val req =
+      StatisticsHelper.buildBulkMetaRequest(
+        metaTable,
+        tableIds,
+        clientSession.getTiKVSession.getTimestamp)
+
+    val rows = readDAGRequest(req, metaTable.getId)
+    if (rows.isEmpty) return Map.empty
+
+    val tsm = mutable.Map[Long, TableStatistics]()
+
+    for (row <- rows) {
+      val tblId = row.getLong(1)
+      val tableStatistics: TableStatistics = tsm.getOrDefault(tblId, new TableStatistics(tblId))
+      tableStatistics.setVersion { row.getUnsignedLong(0) }
+      tableStatistics.setModifyCount { row.getLong(2) }
+      tableStatistics.setCount { row.getUnsignedLong(3) }
+      tsm.put(tblId, tableStatistics)
+    }
+    tsm.toMap
   }
 
   private[statistics] def readDAGRequest(req: TiDAGRequest, physicalId: Long): Iterator[Row] =

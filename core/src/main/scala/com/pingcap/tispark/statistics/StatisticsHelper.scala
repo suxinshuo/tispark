@@ -19,7 +19,7 @@
 package com.pingcap.tispark.statistics
 
 import org.tikv.shade.com.google.common.primitives.UnsignedLong
-import com.pingcap.tikv.expression.{ByItem, ColumnRef, ComparisonBinaryExpression, Constant}
+import com.pingcap.tikv.expression.{ByItem, ColumnRef, ComparisonBinaryExpression, Constant, Expression, LogicalBinaryExpression}
 import com.pingcap.tikv.key.Key
 import com.pingcap.tikv.meta.TiDAGRequest.PushDownType
 import com.pingcap.tikv.meta._
@@ -205,6 +205,36 @@ object StatisticsHelper {
     }
   }
 
+  private[statistics] def getFilterExpr(targetTblIds: List[Long]): Expression = {
+    var filterExpr: Expression = ComparisonBinaryExpression.equal(
+      ColumnRef.create("table_id", IntegerType.BIGINT),
+      Constant.create(targetTblIds.head, IntegerType.BIGINT)
+    )
+    for (tblId <- targetTblIds.tail) {
+      filterExpr = LogicalBinaryExpression.or(
+        ComparisonBinaryExpression.equal(
+          ColumnRef.create("table_id", IntegerType.BIGINT),
+          Constant.create(tblId, IntegerType.BIGINT)
+        ),
+        filterExpr
+      )
+    }
+    filterExpr
+  }
+
+  private[statistics] def buildBulkHistogramsRequest(
+      histTable: TiTableInfo,
+      targetTblIds: List[Long],
+      startTs: TiTimestamp): TiDAGRequest = {
+    TiDAGRequest.Builder
+      .newBuilder()
+      .setFullTableScan(histTable)
+      .addFilter(getFilterExpr(targetTblIds))
+      .addRequiredCols(histRequiredCols.filter(checkColExists(histTable, _)))
+      .setStartTs(startTs)
+      .build(PushDownType.NORMAL)
+  }
+
   private[statistics] def buildHistogramsRequest(
       histTable: TiTableInfo,
       targetTblId: Long,
@@ -225,6 +255,19 @@ object StatisticsHelper {
             ColumnRef.create("table_id", IntegerType.BIGINT),
             Constant.create(targetTblId, IntegerType.BIGINT)))
       .addRequiredCols(requiredCols.filter(checkColExists(tableInfo, _)))
+      .setStartTs(startTs)
+      .build(PushDownType.NORMAL)
+  }
+
+  private[statistics] def buildBulkMetaRequest(
+      metaTable: TiTableInfo,
+      targetTblIds: List[Long],
+      startTs: TiTimestamp): TiDAGRequest = {
+    TiDAGRequest.Builder
+      .newBuilder()
+      .setFullTableScan(metaTable)
+      .addFilter(getFilterExpr(targetTblIds))
+      .addRequiredCols(metaRequiredCols.filter(checkColExists(metaTable, _)))
       .setStartTs(startTs)
       .build(PushDownType.NORMAL)
   }
@@ -252,4 +295,20 @@ object StatisticsHelper {
       .addRequiredCols(bucketRequiredCols.filter(checkColExists(bucketTable, _)))
       .setStartTs(startTs)
       .build(PushDownType.NORMAL)
+
+  private[statistics] def buildBulkBucketRequest(
+      bucketTable: TiTableInfo,
+      targetTblIds: List[Long],
+      startTs: TiTimestamp): TiDAGRequest = {
+    TiDAGRequest.Builder
+      .newBuilder()
+      .setFullTableScan(bucketTable)
+      .addFilter(getFilterExpr(targetTblIds))
+      .setLimit(Int.MaxValue)
+      .addOrderBy(ByItem.create(ColumnRef.create("bucket_id", IntegerType.BIGINT), false))
+      .addRequiredCols(bucketRequiredCols.filter(checkColExists(bucketTable, _)))
+      .setStartTs(startTs)
+      .build(PushDownType.NORMAL)
+  }
+
 }
