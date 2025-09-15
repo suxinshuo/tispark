@@ -272,6 +272,10 @@ object TiUtil {
       tiConf.setPreferredLocations(conf.get(TiConfigConst.PREFERRED_LOCATIONS))
     }
 
+    if (conf.contains(TiConfigConst.TINYINT1_AS_BOOLEAN)) {
+      tiConf.setTinyInt1AsBoolean(conf.get(TiConfigConst.TINYINT1_AS_BOOLEAN).toBoolean)
+    }
+
     tiConf
   }
 

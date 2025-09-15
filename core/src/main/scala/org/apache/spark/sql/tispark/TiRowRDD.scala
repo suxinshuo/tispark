@@ -20,7 +20,7 @@ import com.pingcap.tikv._
 import com.pingcap.tikv.columnar.TiColumnarBatchHelper
 import com.pingcap.tikv.meta.TiDAGRequest
 import com.pingcap.tispark.listener.CacheInvalidateListener
-import com.pingcap.tispark.{TiConfigConst, TiPartition, TiTableReference}
+import com.pingcap.tispark.{TiPartition, TiTableReference}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -47,7 +47,10 @@ class TiRowRDD(
   // used for driver to update PD cache
   private val callBackFunc = CacheInvalidateListener.getInstance()
 
-  override def compute(split: Partition, context: TaskContext): Iterator[InternalRow] =
+  override def compute(split: Partition, context: TaskContext): Iterator[InternalRow] = {
+    // Get the tidb conf(from spark session): TINYINT1_AS_BOOLEAN
+    val tinyInt1AsBoolean = tiConf.isTinyInt1AsBoolean
+
     new Iterator[ColumnarBatch] {
       checkTimezone()
       private val tiPartition = split.asInstanceOf[TiPartition]
@@ -69,12 +72,10 @@ class TiRowRDD(
         iterator.hasNext
       }
 
-      // Get the spark session conf: TINYINT1_AS_BOOLEAN
-      val tinyInt1AsBoolean = sparkSession.conf.get(TiConfigConst.TINYINT1_AS_BOOLEAN, "true").toBoolean
-
       override def next(): ColumnarBatch = {
         TiColumnarBatchHelper.createColumnarBatch(iterator.next, tinyInt1AsBoolean)
       }
     }.asInstanceOf[Iterator[InternalRow]]
+  }
 
 }

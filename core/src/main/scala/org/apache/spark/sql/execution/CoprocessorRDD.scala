@@ -356,8 +356,8 @@ case class ColumnarRegionTaskExec(
         doIndexScan()
       }
 
-      // Get the spark session conf: TINYINT1_AS_BOOLEAN
-      val tinyInt1AsBoolean = sparkSession.conf.get(TiConfigConst.TINYINT1_AS_BOOLEAN, "true").toBoolean
+      // Get the tidb conf(from spark session): TINYINT1_AS_BOOLEAN
+      val tinyInt1AsBoolean = tiConf.isTinyInt1AsBoolean
 
       // The result iterator serves as an wrapper to the final result we fetched from region tasks
       new Iterator[ColumnarBatch] {
