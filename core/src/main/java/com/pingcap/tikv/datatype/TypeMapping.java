@@ -35,10 +35,10 @@ public class TypeMapping {
         || type instanceof StringType;
   }
 
-    public static org.apache.spark.sql.types.DataType toSparkType(DataType type) {
-      // tinyInt1AsBoolean default is true
-      return toSparkType(type, true);
-    }
+  public static org.apache.spark.sql.types.DataType toSparkType(DataType type) {
+    // tinyInt1AsBoolean default is true
+    return toSparkType(type, true);
+  }
 
   public static org.apache.spark.sql.types.DataType toSparkType(DataType type, Boolean tinyInt1AsBoolean) {
     if (type instanceof DateType) {
