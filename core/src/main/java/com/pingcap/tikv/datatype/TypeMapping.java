@@ -36,7 +36,7 @@ public class TypeMapping {
   }
 
     public static org.apache.spark.sql.types.DataType toSparkType(DataType type) {
-      // tinyint1 default is true
+      // tinyInt1AsBoolean default is true
       return toSparkType(type, true);
     }
 
