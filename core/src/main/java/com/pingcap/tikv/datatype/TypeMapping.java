@@ -86,8 +86,12 @@ public class TypeMapping {
         return DataTypes.createDecimalType(20, 0);
       }
       // Convert TINYINT(1) to BooleanType only if the configuration allows it
-      if (tinyInt1AsBoolean && type.getType() == TypeTiny && type.getLength() == 1) {
-        return DataTypes.BooleanType;
+      if (type.getType() == TypeTiny && type.getLength() == 1) {
+        if (tinyInt1AsBoolean) {
+          return DataTypes.BooleanType;
+        } else {
+          return DataTypes.IntegerType;
+        }
       }
       return DataTypes.LongType;
     }
