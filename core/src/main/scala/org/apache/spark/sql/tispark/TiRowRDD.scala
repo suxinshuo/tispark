@@ -47,7 +47,10 @@ class TiRowRDD(
   // used for driver to update PD cache
   private val callBackFunc = CacheInvalidateListener.getInstance()
 
-  override def compute(split: Partition, context: TaskContext): Iterator[InternalRow] =
+  override def compute(split: Partition, context: TaskContext): Iterator[InternalRow] = {
+    // Get the tidb conf(from spark session): TINYINT1_AS_BOOLEAN
+    val tinyInt1AsBoolean = tiConf.isTinyInt1AsBoolean
+
     new Iterator[ColumnarBatch] {
       checkTimezone()
       private val tiPartition = split.asInstanceOf[TiPartition]
@@ -70,8 +73,9 @@ class TiRowRDD(
       }
 
       override def next(): ColumnarBatch = {
-        TiColumnarBatchHelper.createColumnarBatch(iterator.next)
+        TiColumnarBatchHelper.createColumnarBatch(iterator.next, tinyInt1AsBoolean)
       }
     }.asInstanceOf[Iterator[InternalRow]]
+  }
 
 }

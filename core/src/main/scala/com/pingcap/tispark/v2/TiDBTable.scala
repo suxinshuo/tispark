@@ -19,7 +19,7 @@ package com.pingcap.tispark.v2
 import com.pingcap.tikv.ClientSession
 import com.pingcap.tikv.handle.Handle
 import com.pingcap.tikv.meta.{TiDAGRequest, TiTableInfo}
-import com.pingcap.tispark.TiTableReference
+import com.pingcap.tispark.{TiConfigConst, TiTableReference}
 import com.pingcap.tispark.utils.{ReflectionUtil, TiUtil}
 import com.pingcap.tispark.v2.TiDBTable.{getDagRequestToRegionTaskExec, getLogicalPlanToRDD}
 import com.pingcap.tispark.write.{TiDBDelete, TiDBOptions}
@@ -78,7 +78,10 @@ case class TiDBTable(
     }
   }
 
-  override lazy val schema: StructType = TiUtil.getSchemaFromTable(table)
+  override lazy val schema: StructType = {
+    val tinyIntAsBoolean = sqlContext.getConf(TiConfigConst.TINYINT1_AS_BOOLEAN, "true").toBoolean
+    TiUtil.getSchemaFromTable(table, tinyIntAsBoolean)
+  }
 
   override lazy val properties: util.Map[String, String] = {
     if (options.isEmpty) {

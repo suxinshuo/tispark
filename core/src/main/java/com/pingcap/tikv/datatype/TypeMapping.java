@@ -36,6 +36,11 @@ public class TypeMapping {
   }
 
   public static org.apache.spark.sql.types.DataType toSparkType(DataType type) {
+    // tinyInt1AsBoolean default is true
+    return toSparkType(type, true);
+  }
+
+  public static org.apache.spark.sql.types.DataType toSparkType(DataType type, Boolean tinyInt1AsBoolean) {
     if (type instanceof DateType) {
       return DataTypes.DateType;
     }
@@ -80,8 +85,13 @@ public class TypeMapping {
       if (type.isUnsigned() && type.getType() == TypeLonglong) {
         return DataTypes.createDecimalType(20, 0);
       }
+      // Convert TINYINT(1) to BooleanType only if the configuration allows it
       if (type.getType() == TypeTiny && type.getLength() == 1) {
-        return DataTypes.BooleanType;
+        if (tinyInt1AsBoolean) {
+          return DataTypes.BooleanType;
+        } else {
+          return DataTypes.IntegerType;
+        }
       }
       return DataTypes.LongType;
     }

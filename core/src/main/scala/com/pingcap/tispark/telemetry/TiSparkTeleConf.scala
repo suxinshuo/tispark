@@ -66,6 +66,7 @@ object TiSparkTeleConf {
     defaultConfMap += (TiConfigConst.CHUNK_BATCH_SIZE -> 1024)
     defaultConfMap += (TiConfigConst.SHOW_ROWID -> false)
     defaultConfMap += (TiConfigConst.ISOLATION_READ_ENGINES -> "tikv")
+    defaultConfMap += (TiConfigConst.TINYINT1_AS_BOOLEAN -> true)
     defaultConfMap += ("spark.sql.auth.enable" -> false)
   }
 

@@ -20,11 +20,11 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 
 /** A helper class to create {@link ColumnarBatch} from {@link TiChunk} */
 public final class TiColumnarBatchHelper {
-  public static ColumnarBatch createColumnarBatch(TiChunk chunk) {
+  public static ColumnarBatch createColumnarBatch(TiChunk chunk, Boolean tinyInt1AsBoolean) {
     int colLen = chunk.numOfCols();
     TiColumnVectorAdapter[] columns = new TiColumnVectorAdapter[colLen];
     for (int i = 0; i < colLen; i++) {
-      columns[i] = new TiColumnVectorAdapter(chunk.column(i));
+      columns[i] = new TiColumnVectorAdapter(chunk.column(i), tinyInt1AsBoolean);
     }
     ColumnarBatch batch = new ColumnarBatch(columns);
     batch.setNumRows(chunk.numOfRows());

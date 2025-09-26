@@ -479,6 +479,8 @@ trait SharedSQLContext
 
       conf.set("spark.tispark.telemetry.enable", "false")
       conf.set("spark.sql.debug.maxToStringFields", "100")
+      // Set default value for TINYINT(1) to Boolean conversion
+      conf.set("spark.tispark.tinyint1_as_boolean", "true")
     }
 
   private class TiContextCache {

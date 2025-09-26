@@ -29,14 +29,12 @@ import org.apache.spark.sql.types.{MetadataBuilder, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row, SQLContext, SparkSession}
 import org.apache.spark.{SparkConf, sql}
 import org.slf4j.LoggerFactory
-import org.tikv.common.meta
 import org.tikv.common.meta.TiTimestamp
 import org.tikv.common.region.TiStoreType
 import org.tikv.kvproto.Kvrpcpb.{CommandPri, IsolationLevel}
 
 import java.time.{Instant, LocalDate, ZoneId}
-import java.util
-import java.util.{Map, TimeZone}
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
@@ -75,7 +73,9 @@ object TiUtil {
 
   def daysToLocalDate(days: Int): LocalDate = LocalDate.ofEpochDay(days)
 
-  def getSchemaFromTable(table: TiTableInfo): StructType = {
+  def getSchemaFromTable(table: TiTableInfo): StructType = getSchemaFromTable(table, tinyIntAsBoolean = true)
+
+  def getSchemaFromTable(table: TiTableInfo, tinyIntAsBoolean: Boolean): StructType = {
     val fields = new Array[StructField](table.getColumns.size())
     for (i <- 0 until table.getColumns.size()) {
       val col = table.getColumns.get(i)
@@ -85,7 +85,7 @@ object TiUtil {
         .build()
       fields(i) = StructField(
         col.getName,
-        TypeMapping.toSparkType(col.getType),
+        TypeMapping.toSparkType(col.getType, tinyIntAsBoolean),
         nullable = !notNull,
         metadata)
     }
@@ -270,6 +270,10 @@ object TiUtil {
 
     if (conf.contains(TiConfigConst.PREFERRED_LOCATIONS)) {
       tiConf.setPreferredLocations(conf.get(TiConfigConst.PREFERRED_LOCATIONS))
+    }
+
+    if (conf.contains(TiConfigConst.TINYINT1_AS_BOOLEAN)) {
+      tiConf.setTinyInt1AsBoolean(conf.get(TiConfigConst.TINYINT1_AS_BOOLEAN).toBoolean)
     }
 
     tiConf

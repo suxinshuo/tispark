@@ -144,6 +144,9 @@ public class TiConfiguration implements Serializable {
   private long certReloadInterval = getTimeAsSeconds(DEF_TIKV_TLS_RELOAD_INTERVAL);
   private static final String DEF_TIKV_TLS_RELOAD_INTERVAL = "10s";
 
+  private static final Boolean TINY_INT_1_AS_BOOLEAN = true;
+  private boolean tinyInt1AsBoolean = TINY_INT_1_AS_BOOLEAN;
+
   public TiConfiguration setConnRecycleTimeInSeconds(String connRecycleTime) {
     this.connRecycleTime = getTimeAsSeconds(connRecycleTime);
     return this;

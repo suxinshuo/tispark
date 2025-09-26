@@ -26,8 +26,8 @@ public class TiColumnVectorAdapter extends ColumnVector {
   private final TiColumnVector tiColumnVector;
 
   /** Sets up the data type of this column vector. */
-  public TiColumnVectorAdapter(TiColumnVector tiColumnVector) {
-    super(TypeMapping.toSparkType(tiColumnVector.dataType()));
+  public TiColumnVectorAdapter(TiColumnVector tiColumnVector, Boolean tinyInt1AsBoolean) {
+    super(TypeMapping.toSparkType(tiColumnVector.dataType(), tinyInt1AsBoolean));
     this.tiColumnVector = tiColumnVector;
   }
 

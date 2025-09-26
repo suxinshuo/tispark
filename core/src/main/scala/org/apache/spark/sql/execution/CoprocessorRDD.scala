@@ -22,6 +22,7 @@ import com.pingcap.tikv.meta.TiDAGRequest
 import com.pingcap.tikv.operation.iterator.CoprocessorIterator
 import com.pingcap.tikv.util.RangeSplitter
 import com.pingcap.tikv.{ClientSession, TiConfiguration}
+import com.pingcap.tispark.TiConfigConst
 import com.pingcap.tispark.listener.CacheInvalidateListener
 import com.pingcap.tispark.utils.TiUtil
 import org.apache.spark.rdd.RDD
@@ -355,6 +356,9 @@ case class ColumnarRegionTaskExec(
         doIndexScan()
       }
 
+      // Get the tidb conf(from spark session): TINYINT1_AS_BOOLEAN
+      val tinyInt1AsBoolean = tiConf.isTinyInt1AsBoolean
+
       // The result iterator serves as an wrapper to the final result we fetched from region tasks
       new Iterator[ColumnarBatch] {
         override def hasNext: Boolean = {
@@ -386,7 +390,7 @@ case class ColumnarRegionTaskExec(
         }
 
         override def next(): ColumnarBatch = {
-          TiColumnarBatchHelper.createColumnarBatch(rowIterator.next())
+          TiColumnarBatchHelper.createColumnarBatch(rowIterator.next(), tinyInt1AsBoolean)
         }
       }.asInstanceOf[Iterator[InternalRow]]
     }
