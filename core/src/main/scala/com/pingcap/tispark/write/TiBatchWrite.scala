@@ -135,7 +135,6 @@ class TiBatchWrite(
         if (rowIter.nonEmpty) {
           logger.info(s"开始处理分区数据 | JDBC URL: $jdbcUrl | 用户: $jdbcUser")
           ResourceUtil.using(JdbcUtil.getConn(jdbcUrl, jdbcUser, jdbcPassword)) { conn => {
-            conn.setAutoCommit(false)
             ResourceUtil.using(conn.prepareStatement(upsertSql)) { pstmt => {
               var rowCount = 0
               while (rowIter.hasNext) {
@@ -201,7 +200,6 @@ class TiBatchWrite(
                 pstmt.clearBatch()
                 rowCount = 0
               }
-              conn.commit()
             }
             }
           }
