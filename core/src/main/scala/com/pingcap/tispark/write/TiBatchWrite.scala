@@ -22,7 +22,7 @@ import com.pingcap.tikv.partition.{PartitionedTable, TableCommon}
 import com.pingcap.tikv.util.ConvertUpstreamUtils
 import com.pingcap.tispark.TiDBUtils
 import com.pingcap.tispark.auth.TiAuthorization
-import com.pingcap.tispark.utils.{TiUtil, TwoPhaseCommitHepler, WriteUtil}
+import com.pingcap.tispark.utils.{JdbcUtil, ResourceUtil, TiUtil, TwoPhaseCommitHepler, WriteUtil}
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
@@ -90,11 +90,128 @@ class TiBatchWrite(
   private val tiAuthorization: Option[TiAuthorization] = tiContext.tiAuthorization
 
   private def write(): Unit = {
-    try {
-      doWrite()
-    } finally {
-      close()
+    if (tiContext.writeUpsertEnable) {
+      logger.info("Using upsert write mode")
+      logger.warn("Upsert write mode does not support transaction")
+      upsertWrite()
+    } else {
+      logger.info("Using two phase commit write mode")
+      try {
+        doWrite()
+      } finally {
+        close()
+      }
     }
+  }
+
+  /**
+   * Direct upsert write, no transaction
+   */
+  private def upsertWrite(): Unit = {
+    println(s"options: ${options.parameters}")
+    val jdbcUrl = s"jdbc:mysql://${options.address}:${options.port}?rewriteBatchedStatements=true"
+    val jdbcUser = options.user
+    val jdbcPassword = options.password
+
+    dataToWrite.foreach(dtw => {
+      val dbTable = s"${dtw._1.database}.${dtw._1.table}"
+      val df = dtw._2
+
+      // 从 sparkConf 获取 upsert 配置
+      val upsertWritePartitionNum = tiContext.writeUpsertPartitionNum
+      val upsertWriteBatchSize = tiContext.writeUpsertBatchSize
+
+      val columns = df.columns.mkString(",")
+      val updateColumns = df.columns.map(colName => s"$colName=values($colName)").mkString(",")
+      val placeholder = (1 to df.columns.length).map(_ => "?").mkString(",")
+      val upsertSql = s"INSERT INTO $dbTable ($columns) VALUES ($placeholder) ON DUPLICATE KEY UPDATE $updateColumns"
+      logger.info(s"upsertSql: $upsertSql")
+
+      // 如果当前 partition 数量 > upsertWritePartitionNum * 2, 则 coalescePartition, 否则 repartition
+      val repartitionDf = df.rdd.partitions.length match {
+        case x if x > upsertWritePartitionNum * 2 => df.coalesce(upsertWritePartitionNum)
+        case _ => df.repartition(upsertWritePartitionNum)
+       }
+      repartitionDf.foreachPartition((rowIter: Iterator[Row]) => {
+        if (rowIter.nonEmpty) {
+          logger.info(s"开始处理分区数据 | JDBC URL: $jdbcUrl | 用户: $jdbcUser")
+          ResourceUtil.using(JdbcUtil.getConn(jdbcUrl, jdbcUser, jdbcPassword)) { conn => {
+            conn.setAutoCommit(false)
+            ResourceUtil.using(conn.prepareStatement(upsertSql)) { pstmt => {
+              var rowCount = 0
+              while (rowIter.hasNext) {
+                val row = rowIter.next()
+                for (i <- 0 until row.length) {
+                  val paramIndex = i + 1
+                  val value = row.get(i)
+                  Option(value) match {
+                    case Some(v) =>
+                      v match {
+                        // 字符串类型
+                        case s: String => pstmt.setString(paramIndex, s)
+
+                        // 整数类型
+                        case i: Integer => pstmt.setInt(paramIndex, i)
+                        case l: java.lang.Long => pstmt.setLong(paramIndex, l)
+                        case s: java.lang.Short => pstmt.setShort(paramIndex, s)
+                        case b: java.lang.Byte => pstmt.setByte(paramIndex, b)
+
+                        // 浮点数类型
+                        case d: java.lang.Double => pstmt.setDouble(paramIndex, d)
+                        case f: java.lang.Float => pstmt.setFloat(paramIndex, f)
+
+                        // 布尔类型
+                        case b: java.lang.Boolean => pstmt.setBoolean(paramIndex, b)
+
+                        // 日期时间类型
+                        case date: java.sql.Date => pstmt.setDate(paramIndex, date)
+                        case time: java.sql.Time => pstmt.setTime(paramIndex, time)
+                        case timestamp: java.sql.Timestamp => pstmt.setTimestamp(paramIndex, timestamp)
+
+                        // Java 8 日期时间类型
+                        case instant: java.time.Instant => pstmt.setTimestamp(paramIndex, java.sql.Timestamp.from(instant))
+                        case localDate: java.time.LocalDate => pstmt.setDate(paramIndex, java.sql.Date.valueOf(localDate))
+                        case localTime: java.time.LocalTime => pstmt.setTime(paramIndex, java.sql.Time.valueOf(localTime))
+                        case localDateTime: java.time.LocalDateTime => pstmt.setTimestamp(paramIndex, java.sql.Timestamp.valueOf(localDateTime))
+
+                        // 大数值类型
+                        case bigDecimal: java.math.BigDecimal => pstmt.setBigDecimal(paramIndex, bigDecimal)
+                        case bigInteger: java.math.BigInteger => pstmt.setBigDecimal(paramIndex, new java.math.BigDecimal(bigInteger))
+
+                        // 字节数组
+                        case bytes: Array[Byte] => pstmt.setBytes(paramIndex, bytes)
+
+                        // 默认情况使用setObject
+                        case _ => pstmt.setObject(paramIndex, v)
+                      }
+                    case None =>
+                      pstmt.setObject(paramIndex, null)
+                  }
+                }
+                pstmt.addBatch()
+                rowCount += 1
+
+                if (rowCount >= upsertWriteBatchSize) {
+                  pstmt.executeBatch()
+                  pstmt.clearBatch()
+                  rowCount = 0
+                }
+              }
+              if (rowCount > 0) {
+                pstmt.executeBatch()
+                pstmt.clearBatch()
+                rowCount = 0
+              }
+              conn.commit()
+            }
+            }
+          }
+          }
+        } else {
+          logger.info("当前分区无数据, 跳过JDBC连接创建")
+        }
+      })
+    })
   }
 
   private def close(): Unit = {

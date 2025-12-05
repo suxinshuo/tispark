@@ -51,6 +51,9 @@ object TiConfigConst {
   val KV_CLIENT_CONCURRENCY: String = "spark.tispark.kv_client_concurrency"
   // Default is true
   val TINYINT1_AS_BOOLEAN: String = "spark.tispark.tinyint1_as_boolean"
+  val WRITE_UPSERT_ENABLE: String = "spark.tispark.write.upsert.enable"
+  val WRITE_UPSERT_PARTITION_NUM: String = "spark.tispark.write.upsert.partition_num"
+  val WRITE_UPSERT_BATCH_SIZE: String = "spark.tispark.write.upsert.batch_size"
 
   val SNAPSHOT_ISOLATION_LEVEL: String = "SI"
   val READ_COMMITTED_ISOLATION_LEVEL: String = "RC"

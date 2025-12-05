@@ -324,10 +324,10 @@ object TiDBOptions {
   private def checkTiDBPassword(conf: Map[String, String]): Unit = {
     conf.foreach {
       case (k, _) =>
-        if ("tidb.password".equals(k) || "spark.tispark.tidb.password".equals(k)) {
-          throw new TiBatchWriteException(
-            "!Security! Please DO NOT add TiDB password to SparkConf which will be shown on Spark WebUI!")
-        }
+//        if ("tidb.password".equals(k) || "spark.tispark.tidb.password".equals(k)) {
+//          throw new TiBatchWriteException(
+//            "!Security! Please DO NOT add TiDB password to SparkConf which will be shown on Spark WebUI!")
+//        }
     }
   }
 }

@@ -92,6 +92,14 @@ class TiContext(val sparkSession: SparkSession) extends Serializable with Loggin
   val forcedUpdateStatistics: Boolean =
     conf.getBoolean(TiConfigConst.ENABLE_ENFORCE_UPDATE_STATISTICS, defaultValue = false)
 
+  // upsert
+  val writeUpsertEnable: Boolean =
+    conf.getBoolean(TiConfigConst.WRITE_UPSERT_ENABLE, defaultValue = false)
+  val writeUpsertPartitionNum: Int =
+    conf.getInt(TiConfigConst.WRITE_UPSERT_PARTITION_NUM, defaultValue = 15)
+  val writeUpsertBatchSize: Int =
+    conf.getInt(TiConfigConst.WRITE_UPSERT_BATCH_SIZE, defaultValue = 10000)
+
   // add backtick for table name in case it contains, e.g., a minus sign
   private def getViewName(dbName: String, tableName: String, dbNameAsPrefix: Boolean): String =
     "`" + (if (dbNameAsPrefix) dbName + "_" + tableName else tableName) + "`"

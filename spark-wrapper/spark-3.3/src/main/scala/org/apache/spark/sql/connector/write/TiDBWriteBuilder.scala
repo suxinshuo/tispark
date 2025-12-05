@@ -35,6 +35,10 @@ case class TiDBWriteBuilder(
             df.write
               .format("tidb")
               .options(tiDBOptions.parameters)
+              .option(TiDBOptions.TIDB_ADDRESS, tiDBOptions.address)
+              .option(TiDBOptions.TIDB_PORT, tiDBOptions.port)
+              .option(TiDBOptions.TIDB_USER, tiDBOptions.user)
+              .option(TiDBOptions.TIDB_PASSWORD, tiDBOptions.password)
               .option(TiDBOptions.TIDB_DATABASE, tiDBOptions.database)
               .option(TiDBOptions.TIDB_TABLE, tiDBOptions.table)
               .option(TiDBOptions.TIDB_DEDUPLICATE, "false")
