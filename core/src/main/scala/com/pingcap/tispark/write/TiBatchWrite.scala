@@ -108,7 +108,6 @@ class TiBatchWrite(
    * Direct upsert write, no transaction
    */
   private def upsertWrite(): Unit = {
-    println(s"options: ${options.parameters}")
     val jdbcUrl = s"jdbc:mysql://${options.address}:${options.port}?rewriteBatchedStatements=true"
     val jdbcUser = options.user
     val jdbcPassword = options.password
