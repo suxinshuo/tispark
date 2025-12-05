@@ -96,7 +96,7 @@ class TiContext(val sparkSession: SparkSession) extends Serializable with Loggin
   val writeUpsertEnable: Boolean =
     conf.getBoolean(TiConfigConst.WRITE_UPSERT_ENABLE, defaultValue = false)
   val writeUpsertPartitionNum: Int =
-    conf.getInt(TiConfigConst.WRITE_UPSERT_PARTITION_NUM, defaultValue = 15)
+    conf.getInt(TiConfigConst.WRITE_UPSERT_PARTITION_NUM, defaultValue = 10)
   val writeUpsertBatchSize: Int =
     conf.getInt(TiConfigConst.WRITE_UPSERT_BATCH_SIZE, defaultValue = 10000)
 
