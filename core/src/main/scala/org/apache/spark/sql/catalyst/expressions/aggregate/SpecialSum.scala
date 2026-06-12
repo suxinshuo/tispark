@@ -26,7 +26,6 @@ import org.apache.spark.sql.catalyst.expressions.{
   ExpressionDescription,
   Literal
 }
-import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types._
 
 object PromotedSum {
@@ -106,8 +105,15 @@ case class SpecialSum(child: Expression, retType: DataType, initVal: Any)
   // Return data type.
   override def dataType: DataType = resultType
 
+  // Spark 3.4+ removed TypeUtils.checkForNumericExpr; use an inline numeric check
+  // that compiles against all supported Spark versions (3.0 - 3.5).
   override def checkInputDataTypes(): TypeCheckResult =
-    TypeUtils.checkForNumericExpr(child.dataType, "function sum")
+    if (child.dataType.isInstanceOf[NumericType]) {
+      TypeCheckResult.TypeCheckSuccess
+    } else {
+      TypeCheckResult.TypeCheckFailure(
+        s"function sum requires numeric type, not ${child.dataType.catalogString}")
+    }
 
   /**
    *  The implement is same as the [[org.apache.spark.sql.catalyst.expressions.aggregate.Sum]]

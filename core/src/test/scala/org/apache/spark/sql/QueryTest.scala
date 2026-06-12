@@ -365,16 +365,8 @@ abstract class QueryTest extends SparkFunSuite {
       try df
       catch {
         case ae: AnalysisException =>
-          if (ae.plan.isDefined) {
-            fail(s"""
-                    |Failed to analyze query: $ae
-                    |${ae.plan.get}
-                    |
-                    |${stackTraceToString(ae)}
-                    |""".stripMargin)
-          } else {
-            throw ae
-          }
+          // Spark 3.4+ removed AnalysisException.plan; just re-throw to report the failure.
+          throw ae
       }
 
     assertEmptyMissingInput(analyzedDF)
@@ -463,16 +455,8 @@ abstract class QueryTest extends SparkFunSuite {
       try ds
       catch {
         case ae: AnalysisException =>
-          if (ae.plan.isDefined) {
-            fail(s"""
-                    |Failed to analyze query: $ae
-                    |${ae.plan.get}
-                    |
-                    |${stackTraceToString(ae)}
-             """.stripMargin)
-          } else {
-            throw ae
-          }
+          // Spark 3.4+ removed AnalysisException.plan; just re-throw to report the failure.
+          throw ae
       }
     assertEmptyMissingInput(analyzedDS)
 
