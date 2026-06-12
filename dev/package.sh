@@ -149,20 +149,21 @@ fi
 # print summary
 # ---------------------------------------------------------------------------
 echo "==> Spark profile : $SPARK_PROFILE"
-echo "==> Java 8  (tikv): $JAVA8_HOME"
+echo "==> Java 8 (tikv+db-random-test): $JAVA8_HOME"
 echo "==> $CORE_JDK_LABEL (rest): $CORE_JDK"
 
 # --- 0) generate TiSparkVersion.scala (version imprint) ---------------------
 sh core/scripts/version.sh
 
-# --- 1) tikv-client under Java 8, install into the local repo ---------------
-echo "==> [1/2] building tikv-client (Java 8)"
-JAVA_HOME="$JAVA8_HOME" mvn -pl tikv-client install -DskipTests "${PROTOC_ARGS[@]+"${PROTOC_ARGS[@]}"}"
+# --- 1) tikv-client + db-random-test under Java 8, install into local repo --
+echo "==> [1/2] building tikv-client, db-random-test (Java 8)"
+JAVA_HOME="$JAVA8_HOME" mvn -pl tikv-client,db-random-test install -DskipTests \
+  -Dmaven.javadoc.skip=true "${PROTOC_ARGS[@]+"${PROTOC_ARGS[@]}"}"
 
 # --- 2) core + wrappers + assembly under the appropriate JDK ---------------
 echo "==> [2/2] packaging spark modules ($CORE_JDK_LABEL, -P$SPARK_PROFILE)"
 JAVA_HOME="$CORE_JDK" mvn -P"$SPARK_PROFILE" -pl '!tikv-client,!db-random-test' clean package \
-  -DskipTests -Dmaven.test.skip=true -DskipFetchTestData=true \
+  -DskipTests -DskipFetchTestData=true \
   -Dmaven.javadoc.skip=true -Dscalafmt.skip=true
 
 echo "==> done. Assembly jar:"
