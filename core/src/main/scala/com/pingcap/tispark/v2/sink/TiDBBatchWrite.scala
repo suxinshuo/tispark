@@ -17,19 +17,27 @@
 package com.pingcap.tispark.v2.sink
 
 import com.pingcap.tispark.write.TiDBOptions
-import org.apache.spark.sql.TiContext
 import org.apache.spark.sql.connector.write._
+import org.apache.spark.sql.types.StructType
+import org.slf4j.LoggerFactory
 
 /**
- * Use V1WriteBuilder before turn to v2
+ * V2 BatchWrite for the `jdbc_upsert` mode. Writes through TiDB via JDBC batch
+ * `INSERT ... ON DUPLICATE KEY UPDATE`; no 2PC, per-batch autocommit.
  */
-case class TiDBBatchWrite(logicalInfo: LogicalWriteInfo, tiDBOptions: TiDBOptions)(
-    @transient val tiContext: TiContext)
+case class TiDBBatchWrite(schema: StructType, tiDBOptions: TiDBOptions, upsertSql: String)
     extends BatchWrite {
+
+  private final val logger = LoggerFactory.getLogger(getClass.getName)
+
   override def createBatchWriterFactory(info: PhysicalWriteInfo): DataWriterFactory =
-    TiDBDataWriterFactory(logicalInfo.schema(), tiDBOptions, tiContext.tiConf)
+    TiDBDataWriterFactory(schema, tiDBOptions.url, upsertSql, tiDBOptions.upsertBatchSize)
 
-  override def commit(messages: Array[WriterCommitMessage]): Unit = ???
+  override def commit(messages: Array[WriterCommitMessage]): Unit =
+    logger.info(s"TiDB jdbc_upsert committed across ${messages.length} partitions")
 
-  override def abort(messages: Array[WriterCommitMessage]): Unit = ???
+  override def abort(messages: Array[WriterCommitMessage]): Unit =
+    logger.warn(
+      "TiDB jdbc_upsert aborted; per-batch autocommit means some rows may already " +
+        "be persisted (no global rollback). Upserts are idempotent and safe to retry.")
 }

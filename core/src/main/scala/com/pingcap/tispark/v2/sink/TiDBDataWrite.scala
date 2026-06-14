@@ -16,34 +16,85 @@
 
 package com.pingcap.tispark.v2.sink
 
-import com.pingcap.tikv.TiConfiguration
-import com.pingcap.tispark.write.TiDBOptions
-import org.apache.spark.sql.Row
+import com.pingcap.tispark.TiDBUtils
+import org.apache.spark.sql.catalyst.CatalystTypeConverters
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.write.{DataWriter, WriterCommitMessage}
 import org.apache.spark.sql.types.StructType
+import org.slf4j.LoggerFactory
+
+import java.sql.{Connection, PreparedStatement}
 
 /**
- * Use V1WriteBuilder before turn to v2
+ * Per-partition JDBC writer for the `jdbc_upsert` mode. Builds one connection,
+ * batches `INSERT ... ON DUPLICATE KEY UPDATE` via addBatch/executeBatch.
  */
 case class TiDBDataWrite(
-    partitionId: Int,
-    taskId: Long,
     schema: StructType,
-    tiDBOptions: TiDBOptions,
-    ticonf: TiConfiguration)
+    url: String,
+    upsertSql: String,
+    batchSize: Int)
     extends DataWriter[InternalRow] {
 
-  override def write(record: InternalRow): Unit = {
-    val row = Row.fromSeq(record.toSeq(schema))
-    ???
+  private final val logger = LoggerFactory.getLogger(getClass.getName)
+
+  private val dataTypes = schema.fields.map(_.dataType)
+  private val converters =
+    schema.fields.map(f => CatalystTypeConverters.createToScalaConverter(f.dataType))
+
+  private var conn: Connection = _
+  private var stmt: PreparedStatement = _
+  private var rowsInBatch: Int = 0
+
+  private def ensureOpen(): Unit = {
+    if (stmt == null) {
+      val c = TiDBUtils.createConnectionFactory(url)()
+      c.setAutoCommit(true)
+      stmt = c.prepareStatement(upsertSql)
+      conn = c
+    }
   }
 
-  override def commit(): WriterCommitMessage = ???
+  override def write(record: InternalRow): Unit = {
+    ensureOpen()
+    var i = 0
+    while (i < dataTypes.length) {
+      val value =
+        if (record.isNullAt(i)) null
+        else converters(i)(record.get(i, dataTypes(i))).asInstanceOf[AnyRef]
+      stmt.setObject(i + 1, value)
+      i += 1
+    }
+    stmt.addBatch()
+    rowsInBatch += 1
+    if (rowsInBatch >= batchSize) {
+      stmt.executeBatch()
+      rowsInBatch = 0
+    }
+  }
 
-  override def abort(): Unit = {}
+  override def commit(): WriterCommitMessage = {
+    if (stmt != null && rowsInBatch > 0) {
+      stmt.executeBatch()
+      rowsInBatch = 0
+    }
+    WriteSucceeded
+  }
 
-  override def close(): Unit = {}
+  override def abort(): Unit = close()
+
+  override def close(): Unit = {
+    if (stmt != null) {
+      try stmt.close()
+      catch { case t: Throwable => logger.warn("Failed to close PreparedStatement", t) }
+      stmt = null
+    }
+    if (conn != null) {
+      try conn.close()
+      catch { case t: Throwable => logger.warn("Failed to close JDBC connection", t) }
+      conn = null
+    }
+  }
 }
 
 object WriteSucceeded extends WriterCommitMessage

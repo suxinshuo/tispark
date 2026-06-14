@@ -19,10 +19,11 @@ package com.pingcap.tispark.v2
 import com.pingcap.tikv.ClientSession
 import com.pingcap.tikv.handle.Handle
 import com.pingcap.tikv.meta.{TiDAGRequest, TiTableInfo}
-import com.pingcap.tispark.{TiConfigConst, TiTableReference}
+import com.pingcap.tispark.{TiConfigConst, TiSparkInfo, TiTableReference}
 import com.pingcap.tispark.utils.{ReflectionUtil, TiUtil}
 import com.pingcap.tispark.v2.TiDBTable.{getDagRequestToRegionTaskExec, getLogicalPlanToRDD}
-import com.pingcap.tispark.write.{TiDBDelete, TiDBOptions}
+import com.pingcap.tispark.v2.sink.TiDBBatchWrite
+import com.pingcap.tispark.write.{TiDBDelete, TiDBOptions, UpsertSqlBuilder}
 import org.apache.commons.codec.binary.Hex
 import org.apache.commons.lang3.StringUtils
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
@@ -116,6 +117,7 @@ case class TiDBTable(
     val capabilities = new util.HashSet[TableCapability]
     capabilities.add(TableCapability.BATCH_READ)
     capabilities.add(TableCapability.V1_BATCH_WRITE)
+    capabilities.add(TableCapability.BATCH_WRITE)
     capabilities
   }
 
@@ -139,7 +141,49 @@ case class TiDBTable(
     }
     // Get TiDBOptions
     val tiDBOptions = new TiDBOptions(option)
-    ReflectionUtil.newTiDBWriteBuilder(info, tiDBOptions, sqlContext)
+
+    if (tiDBOptions.isJdbcUpsertMode) {
+      val jdbcUpsertSparkVersions = Set("3.3", "3.5")
+      require(
+        jdbcUpsertSparkVersions.contains(TiSparkInfo.SPARK_MAJOR_VERSION),
+        s"Write mode 'jdbc_upsert' is only supported on Spark " +
+          s"${jdbcUpsertSparkVersions.toSeq.sorted.mkString(" and ")}, but the current Spark " +
+          s"version is ${TiSparkInfo.SPARK_VERSION} " +
+          s"(detected major version: ${TiSparkInfo.SPARK_MAJOR_VERSION}). " +
+          s"Set spark.tispark.tidb.write.mode=tikv to use the legacy write path on this Spark version.")
+
+      tiDBOptions.checkJdbcWriteRequired()
+
+      val writeColumns = info.schema().fieldNames.toSeq
+      val pkColumns =
+        table.getColumns.asScala.filter(_.isPrimaryKey).map(_.getName).toSet
+
+      if (pkColumns.isEmpty) {
+        logger.warn(
+          s"Table $databaseName.$tableName has no primary key columns; jdbc_upsert relies on " +
+            "ON DUPLICATE KEY UPDATE firing on any unique-key conflict (native MySQL/TiDB semantics).")
+      }
+
+      tiDBOptions.upsertUpdateTimeColumn.foreach { c =>
+        require(
+          writeColumns.contains(c),
+          s"upsert.update_time_column '$c' is not among the written columns: " +
+            writeColumns.mkString(", "))
+      }
+
+      val upsertSql = UpsertSqlBuilder.build(
+        databaseName,
+        tableName,
+        writeColumns,
+        pkColumns,
+        tiDBOptions.upsertUpdateTimeColumn)
+      logger.info(s"TiSpark jdbc_upsert SQL template: $upsertSql")
+
+      ReflectionUtil.newTiDBUpsertWriteBuilder(
+        TiDBBatchWrite(info.schema(), tiDBOptions, upsertSql))
+    } else {
+      ReflectionUtil.newTiDBWriteBuilder(info, tiDBOptions, sqlContext)
+    }
   }
 
   override def deleteWhere(filters: Array[Filter]): Unit = {

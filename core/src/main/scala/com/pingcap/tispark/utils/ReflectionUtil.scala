@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.BasicExpression.TiExpression
 import org.apache.spark.sql.catalyst.expressions.{Alias, ExprId, Expression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.{SparkSession, Strategy, TiContext}
-import org.apache.spark.sql.connector.write.{LogicalWriteInfo, WriteBuilder}
+import org.apache.spark.sql.connector.write.{BatchWrite, LogicalWriteInfo, WriteBuilder}
 import org.slf4j.LoggerFactory
 
 import java.io.File
@@ -70,6 +70,8 @@ object ReflectionUtil {
     "org.apache.spark.sql.extensions.TiStrategy"
   private val TIDB_WRITE_BUILDER_CLASS =
     "org.apache.spark.sql.connector.write.TiDBWriteBuilder"
+  private val TIDB_UPSERT_WRITE_BUILDER_CLASS =
+    "org.apache.spark.sql.connector.write.TiDBUpsertWriteBuilder"
 
   def newAlias(child: Expression, name: String): Alias = {
     classLoader
@@ -150,6 +152,14 @@ object ReflectionUtil {
         classOf[TiDBOptions],
         classOf[SQLContext])
       .newInstance(info, tiDBOptions, sqlContext)
+      .asInstanceOf[WriteBuilder]
+  }
+
+  def newTiDBUpsertWriteBuilder(batchWrite: BatchWrite): WriteBuilder = {
+    classLoader
+      .loadClass(TIDB_UPSERT_WRITE_BUILDER_CLASS)
+      .getDeclaredConstructor(classOf[BatchWrite])
+      .newInstance(batchWrite)
       .asInstanceOf[WriteBuilder]
   }
 }

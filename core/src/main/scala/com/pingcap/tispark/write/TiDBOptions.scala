@@ -77,6 +77,45 @@ class TiDBOptions(@transient val parameters: CaseInsensitiveMap[String]) extends
   val enableUpdateTableStatistics: Boolean =
     getOrDefault(TIDB_ENABLE_UPDATE_TABLE_STATISTICS, "false").toBoolean
   val deduplicate: Boolean = getOrDefault(TIDB_DEDUPLICATE, "true").toBoolean
+
+  // ------------------------------------------------------------
+  // Optional parameters for jdbc_upsert write mode
+  // ------------------------------------------------------------
+  val writeMode: String =
+    getOrDefault(TIDB_WRITE_MODE, "jdbc_upsert").trim.toLowerCase()
+  require(
+    Set("jdbc_upsert", "tikv").contains(writeMode),
+    s"Unsupported '${TIDB_WRITE_MODE}': '$writeMode' (expected 'jdbc_upsert' or 'tikv')")
+
+  val upsertUpdateTimeColumn: Option[String] = {
+    val v = getOrDefault(TIDB_UPSERT_UPDATE_TIME_COLUMN, "")
+    if (v.trim.isEmpty) None else Some(v.trim)
+  }
+
+  val upsertBatchSize: Int = getOrDefault(TIDB_UPSERT_BATCH_SIZE, "1000").toInt
+  require(
+    upsertBatchSize > 0,
+    s"Option '${TIDB_UPSERT_BATCH_SIZE}' must be a positive integer, got: $upsertBatchSize")
+
+  val isJdbcUpsertMode: Boolean = writeMode == "jdbc_upsert"
+
+  /** Connection params required only when writing via jdbc_upsert (JDBC to TiDB). */
+  def checkJdbcWriteRequired(): Unit = {
+    // Empty password is allowed (e.g. TiDB root with no password); only null (option absent) is rejected.
+    Seq(
+      TIDB_ADDRESS -> address,
+      TIDB_PORT -> port,
+      TIDB_USER -> user,
+      TIDB_PASSWORD -> password).foreach {
+      case (name, value) =>
+        require(
+          value != null,
+          s"Option '$name' is required for write mode 'jdbc_upsert'. " +
+            s"Provide it via spark-defaults.conf, --conf, or spark.conf.set at runtime, " +
+            s"e.g. spark.tispark.$name=<value>.")
+    }
+  }
+
   // TiDB use V2 row format to save data after 4.0.0. It can read both V1 and V2 rows.
   // TiSpark only support TiDB which version higher than 4.0.0. And it can read both V1 and V2 rows too.
   // So it better to save data using V2 row format.
@@ -269,6 +308,9 @@ object TiDBOptions {
   val TIDB_COMMIT_PRIMARY_KEY_RETRY_NUMBER: String = newOption("commitPrimaryKeyRetryNumber")
   val TIDB_ENABLE_UPDATE_TABLE_STATISTICS: String = newOption("enableUpdateTableStatistics")
   val TIDB_DEDUPLICATE: String = newOption("deduplicate")
+  val TIDB_WRITE_MODE: String = newOption("tidb.write.mode")
+  val TIDB_UPSERT_UPDATE_TIME_COLUMN: String = newOption("upsert.update_time_column")
+  val TIDB_UPSERT_BATCH_SIZE: String = newOption("upsert.batch_size")
   val TIDB_ROWID: String = newOption("tidbRowId")
   val TiDB_ROW_FORMAT_VERSION: String = newOption("rowFormatVersion")
 
@@ -314,20 +356,13 @@ object TiDBOptions {
     if (sparkConf.get("spark.sql.extensions", "").equals("org.apache.spark.sql.TiExtensions")) {
       // priority: data source config > spark config
       val confMap = sparkConf.getAll.toMap
-      checkTiDBPassword(confMap)
+      // TiDB password may be supplied via SparkConf (spark-defaults.conf / --conf) as well as at
+      // runtime (spark.conf.set). Spark masks secret keys on the Web UI Environment page and in
+      // event logs: `spark.tispark.tidb.password` matches the default `spark.redaction.regex`
+      // (which includes "password"), so it is displayed as *(redacted)*.
       confMap ++ parameters
     } else {
       parameters
-    }
-  }
-
-  private def checkTiDBPassword(conf: Map[String, String]): Unit = {
-    conf.foreach {
-      case (k, _) =>
-        if ("tidb.password".equals(k) || "spark.tispark.tidb.password".equals(k)) {
-          throw new TiBatchWriteException(
-            "!Security! Please DO NOT add TiDB password to SparkConf which will be shown on Spark WebUI!")
-        }
     }
   }
 }

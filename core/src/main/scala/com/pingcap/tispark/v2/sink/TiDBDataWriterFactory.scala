@@ -16,21 +16,21 @@
 
 package com.pingcap.tispark.v2.sink
 
-import com.pingcap.tikv.TiConfiguration
-import com.pingcap.tispark.write.TiDBOptions
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.write.{DataWriter, DataWriterFactory}
 import org.apache.spark.sql.types.StructType
 
 /**
- * Use V1WriteBuilder before turn to v2
+ * Serializable factory shipped to executors; creates one [[TiDBDataWrite]] per
+ * partition task for the `jdbc_upsert` write mode.
  */
 case class TiDBDataWriterFactory(
     schema: StructType,
-    tiDBOptions: TiDBOptions,
-    ticonf: TiConfiguration)
+    url: String,
+    upsertSql: String,
+    batchSize: Int)
     extends DataWriterFactory {
 
   override def createWriter(partitionId: Int, taskId: Long): DataWriter[InternalRow] =
-    TiDBDataWrite(partitionId, taskId, schema, tiDBOptions, ticonf)
+    TiDBDataWrite(schema, url, upsertSql, batchSize)
 }
