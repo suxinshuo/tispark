@@ -17,6 +17,7 @@
 package com.pingcap.tispark.v2.sink
 
 import com.pingcap.tispark.TiDBUtils
+import com.pingcap.tispark.write.TiDBOptions
 import org.apache.spark.sql.catalyst.CatalystTypeConverters
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.write.{DataWriter, WriterCommitMessage}
@@ -28,15 +29,20 @@ import java.sql.{Connection, PreparedStatement}
 /**
  * Per-partition JDBC writer for the `jdbc_upsert` mode. Builds one connection,
  * batches `INSERT ... ON DUPLICATE KEY UPDATE` via addBatch/executeBatch.
+ *
+ * Holds [[TiDBOptions]] rather than the raw JDBC URL so the plaintext password
+ * embedded in the URL is not exposed through the case-class `toString`.
  */
 case class TiDBDataWrite(
     schema: StructType,
-    url: String,
-    upsertSql: String,
-    batchSize: Int)
+    tiDBOptions: TiDBOptions,
+    upsertSql: String)
     extends DataWriter[InternalRow] {
 
   private final val logger = LoggerFactory.getLogger(getClass.getName)
+
+  private val url = tiDBOptions.url
+  private val batchSize = tiDBOptions.upsertBatchSize
 
   private val dataTypes = schema.fields.map(_.dataType)
   private val converters =

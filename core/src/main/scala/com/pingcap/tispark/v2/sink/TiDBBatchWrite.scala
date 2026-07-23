@@ -31,7 +31,7 @@ case class TiDBBatchWrite(schema: StructType, tiDBOptions: TiDBOptions, upsertSq
   private final val logger = LoggerFactory.getLogger(getClass.getName)
 
   override def createBatchWriterFactory(info: PhysicalWriteInfo): DataWriterFactory =
-    TiDBDataWriterFactory(schema, tiDBOptions.url, upsertSql, tiDBOptions.upsertBatchSize)
+    TiDBDataWriterFactory(schema, tiDBOptions, upsertSql)
 
   override def commit(messages: Array[WriterCommitMessage]): Unit =
     logger.info(s"TiDB jdbc_upsert committed across ${messages.length} partitions")

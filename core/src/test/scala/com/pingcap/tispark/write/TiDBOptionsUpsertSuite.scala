@@ -16,7 +16,9 @@
 
 package com.pingcap.tispark.write
 
+import com.pingcap.tispark.v2.sink.{TiDBDataWrite, TiDBDataWriterFactory}
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
 class TiDBOptionsUpsertSuite extends FunSuite with BeforeAndAfterAll {
@@ -76,5 +78,26 @@ class TiDBOptionsUpsertSuite extends FunSuite with BeforeAndAfterAll {
       "tidb.user" -> "root",
       "tidb.password" -> "")
     o.checkJdbcWriteRequired() // must not throw
+  }
+
+  test("sink case-class toString does not leak the JDBC password") {
+    val secret = "sup3rSecretPw"
+    val o = opt(
+      "tidb.addr" -> "127.0.0.1",
+      "tidb.port" -> "4000",
+      "tidb.user" -> "root",
+      "tidb.password" -> secret)
+    // sanity: the password really is embedded in the JDBC URL we are guarding.
+    assert(o.url.contains(secret))
+
+    val schema = StructType(Seq(StructField("id", IntegerType)))
+    val sql = "INSERT INTO `d`.`t` (`id`) VALUES (?) ON DUPLICATE KEY UPDATE `id` = `id`"
+
+    val factory = TiDBDataWriterFactory(schema, o, sql)
+    assert(!factory.toString.contains(secret))
+
+    // Constructing the writer does not open a connection (ensureOpen is lazy).
+    val writer = TiDBDataWrite(schema, o, sql)
+    assert(!writer.toString.contains(secret))
   }
 }

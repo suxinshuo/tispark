@@ -16,6 +16,7 @@
 
 package com.pingcap.tispark.v2.sink
 
+import com.pingcap.tispark.write.TiDBOptions
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.write.{DataWriter, DataWriterFactory}
 import org.apache.spark.sql.types.StructType
@@ -23,14 +24,17 @@ import org.apache.spark.sql.types.StructType
 /**
  * Serializable factory shipped to executors; creates one [[TiDBDataWrite]] per
  * partition task for the `jdbc_upsert` write mode.
+ *
+ * Holds [[TiDBOptions]] rather than the raw JDBC URL so the plaintext password
+ * embedded in the URL is not exposed through the case-class `toString`
+ * (TiDBOptions is a plain class with the default `ClassName@hash` toString).
  */
 case class TiDBDataWriterFactory(
     schema: StructType,
-    url: String,
-    upsertSql: String,
-    batchSize: Int)
+    tiDBOptions: TiDBOptions,
+    upsertSql: String)
     extends DataWriterFactory {
 
   override def createWriter(partitionId: Int, taskId: Long): DataWriter[InternalRow] =
-    TiDBDataWrite(schema, url, upsertSql, batchSize)
+    TiDBDataWrite(schema, tiDBOptions, upsertSql)
 }
