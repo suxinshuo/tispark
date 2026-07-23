@@ -116,8 +116,12 @@ case class TiDBTable(
   override def capabilities(): util.Set[TableCapability] = {
     val capabilities = new util.HashSet[TableCapability]
     capabilities.add(TableCapability.BATCH_READ)
-    capabilities.add(TableCapability.V1_BATCH_WRITE)
-    capabilities.add(TableCapability.BATCH_WRITE)
+    val writeMode = sqlContext.getConf(TiDBOptions.TIDB_WRITE_MODE, "jdbc_upsert").trim.toLowerCase()
+    if (writeMode == "tikv") {
+      capabilities.add(TableCapability.V1_BATCH_WRITE)
+    } else {
+      capabilities.add(TableCapability.BATCH_WRITE)
+    }
     capabilities
   }
 
